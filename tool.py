@@ -6,6 +6,7 @@ from schema import Schema, Literal, Optional
 from griptape.utils.decorators import activity
 
 class GitHubIssueTool(BaseTool):
+    name = "GitHubIssueTool"
     BASE_URL = "https://api.github.com"
 
     def __init__(self, github_access_token: str, github_api_base_url: str = None):
