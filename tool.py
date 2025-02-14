@@ -3,11 +3,11 @@ import jwt
 import time
 import requests
 from base64 import b64decode
-from dataclasses import field
+from attrs import define, field
 from griptape.tools import BaseTool
 from griptape.artifacts import TextArtifact
 from schema import Schema, Literal, Optional
-from griptape.utils.decorators import activity, define
+from griptape.utils.decorators import activity
 
 
 @define
