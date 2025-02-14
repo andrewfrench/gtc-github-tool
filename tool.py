@@ -193,16 +193,33 @@ class GitHubIssueTool(BaseTool):
     def list_repositories(self, values: dict = None) -> TextArtifact:
         """ Lists repositories accessible by the GitHub App installation. """
         url = f"{self.github_api_base_url}/installation/repositories"
-        response = requests.get(url, headers=self._get_headers())
+        headers = self._get_headers()
 
-        if response.status_code == 200:
-            repos = response.json().get("repositories", [])
-            if not repos:
-                return TextArtifact("No repositories found.")
+        repositories = []
+        page = 1
 
-            repo_list = "\n".join([f"{repo['full_name']} (Private: {repo['private']})" for repo in repos])
-            return TextArtifact(f"Repositories accessible by GitHub App:\n{repo_list}")
-        return TextArtifact(f"Error listing repositories: {response.text}")
+        while url:
+            response = requests.get(url, headers=headers, params={"per_page": 100, "page": page})
+
+            if response.status_code != 200:
+                return TextArtifact(f"Error listing repositories: {response.text}")
+
+            data = response.json()
+            repositories.extend(data.get("repositories", []))
+
+            # Check for pagination (GitHub provides next page in Link header)
+            if "next" in response.links:
+                url = response.links["next"]["url"]
+            else:
+                url = None
+
+            page += 1
+
+        if not repositories:
+            return TextArtifact("No repositories found.")
+
+        repo_list = "\n".join([f"{repo['full_name']} (Private: {repo['private']})" for repo in repositories])
+        return TextArtifact(f"Repositories accessible by GitHub App:\n{repo_list}")
 
     @activity(
         config={
@@ -299,6 +316,28 @@ class GitHubIssueTool(BaseTool):
             )
             return TextArtifact(details)
         return TextArtifact(f"Error retrieving PR details: {response.text}")
+
+    @activity(
+        config={
+            "description": "Adds a comment to a specified issue or pull request in a GitHub repository.",
+            "schema": Schema({
+                Literal("owner", description="The owner of the repository."): str,
+                Literal("repo", description="The name of the repository."): str,
+                Literal("number", description="The issue or pull request number to comment on."): int,
+                Literal("comment", description="The content of the comment."): str,
+            }),
+        }
+    )
+    def add_comment(self, values: dict) -> TextArtifact:
+        """ Adds a comment to a GitHub issue or pull request. """
+        url = f"{self.github_api_base_url}/repos/{values['owner']}/{values['repo']}/issues/{values['number']}/comments"
+        payload = {"body": values["comment"]}
+
+        response = requests.post(url, json=payload, headers=self._get_headers())
+
+        if response.status_code == 201:
+            return TextArtifact(f"Comment added successfully: {response.json().get('html_url')}")
+        return TextArtifact(f"Error adding comment: {response.text}")
 
 
 def init_tool() -> GitHubIssueTool:
