@@ -192,7 +192,7 @@ class GitHubIssueTool(BaseTool):
     )
     def list_repositories(self, values: dict = None) -> TextArtifact:
         """ Lists repositories accessible by the GitHub App installation. """
-        url = f"{self.github_api_base_url}/repositories"
+        url = f"{self.github_api_base_url}/installation/repositories"
         headers = self._get_headers()
 
         repositories = []
@@ -206,13 +206,7 @@ class GitHubIssueTool(BaseTool):
 
             data = response.json()
             repositories.extend(data.get("repositories", []))
-
-            # Check for pagination (GitHub provides next page in Link header)
-            if "next" in response.links:
-                url = response.links["next"]["url"]
-            else:
-                url = None
-
+            url = response.links["next"]["url"] if "next" in response.links else None
             page += 1
 
         if not repositories:
