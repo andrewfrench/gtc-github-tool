@@ -13,8 +13,6 @@ from griptape.utils.decorators import activity, define
 @define
 class GitHubIssueTool(BaseTool):
     github_api_base_url: str = field(default="https://api.github.com", kw_only=True)
-
-    # GitHub App credentials
     github_app_id: str = field(default=None, kw_only=True)
     github_installation_id: str = field(default=None, kw_only=True)
     github_private_key_b64: str = field(default=None, kw_only=True)
