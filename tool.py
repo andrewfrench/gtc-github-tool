@@ -1,17 +1,19 @@
+from __future__ import annotations
+
 import os
 import requests
+from schema import Schema, Literal, Optional
+
+from attr import Factory, define, field
+
 from griptape.tools import BaseTool
 from griptape.artifacts import TextArtifact
-from schema import Schema, Literal, Optional
 from griptape.utils.decorators import activity
 
+@define
 class GitHubIssueTool(BaseTool):
-    name = "GitHubIssueTool"
-    BASE_URL = "https://api.github.com"
-
-    def __init__(self, github_access_token: str, github_api_base_url: str = None):
-        self.github_access_token = github_access_token
-        self.github_api_base_url = github_api_base_url or self.BASE_URL
+    base_url: str = field(default="https://api.github.com", kw_only=True)
+    github_access_token: str = field(default=None, kw_only=True)
 
     def _get_headers(self):
         """ Returns authorization headers for GitHub API requests. """
@@ -89,4 +91,6 @@ def init_tool() -> GitHubIssueTool:
     if not github_access_token:
         raise ValueError("Error: GITHUB_ACCESS_TOKEN environment variable must be set.")
 
-    return GitHubIssueTool(github_access_token=github_access_token)
+    return GitHubIssueTool(
+        github_access_token=github_access_token
+    )

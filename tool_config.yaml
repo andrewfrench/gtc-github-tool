@@ -2,11 +2,11 @@ version: 1.0
 runtime: python3
 runtime_version: 3.12
 build:
-  requirements_file: requirements.txt
+  requirements_file: /requirements.txt
   cache_build_dependencies:
     enabled: true
     watched_files:
-      - requirements.txt
+      - /requirements.txt
       - tool_config.yaml
 run:
   tool_file: tool.py
