@@ -1,25 +1,57 @@
-from __future__ import annotations
-
 import os
+import jwt
+import time
 import requests
-from schema import Schema, Literal, Optional
-
-from attr import Factory, define, field
-
+from base64 import b64decode
+from dataclasses import field
 from griptape.tools import BaseTool
 from griptape.artifacts import TextArtifact
-from griptape.utils.decorators import activity
+from schema import Schema, Literal, Optional
+from griptape.utils.decorators import activity, define
+
 
 @define
 class GitHubIssueTool(BaseTool):
     github_api_base_url: str = field(default="https://api.github.com", kw_only=True)
-    github_access_token: str = field(default=None, kw_only=True)
+
+    # GitHub App credentials
+    github_app_id: str = field(default=None, kw_only=True)
+    github_installation_id: str = field(default=None, kw_only=True)
+    github_private_key_b64: str = field(default=None, kw_only=True)
+
+    def _generate_jwt(self):
+        """ Generates a JWT for GitHub App authentication. """
+        if not self.github_app_id or not self.github_private_key_b64:
+            raise ValueError("GitHub App ID and private key path are required.")
+
+        private_key = b64decode(self.github_private_key_b64)
+
+        payload = {
+            "iat": int(time.time()),
+            "exp": int(time.time()) + (10 * 60),  # JWT valid for 10 minutes
+            "iss": self.github_app_id
+        }
+        return jwt.encode(payload, private_key, algorithm="RS256")
+
+    def _get_installation_token(self):
+        """ Exchanges a JWT for an installation access token. """
+        jwt_token = self._generate_jwt()
+        url = f"{self.github_api_base_url}/app/installations/{self.github_installation_id}/access_tokens"
+
+        headers = {
+            "Authorization": f"Bearer {jwt_token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+
+        response = requests.post(url, headers=headers)
+        if response.status_code == 201:
+            return response.json().get("token")
+        raise ValueError(f"Failed to get installation token: {response.text}")
 
     def _get_headers(self):
-        """ Returns authorization headers for GitHub API requests. """
-        if not self.github_access_token:
-            raise
-        return {"Authorization": f"Bearer {self.github_access_token}", "Accept": "application/vnd.github.v3+json"}
+        """ Returns headers with the installation token for API authentication. """
+        installation_token = self._get_installation_token()
+        return {"Authorization": f"Bearer {installation_token}", "Accept": "application/vnd.github.v3+json"}
 
     @activity(
         config={
@@ -125,10 +157,15 @@ class GitHubIssueTool(BaseTool):
 
 
 def init_tool() -> GitHubIssueTool:
-    github_access_token = os.environ.get("GITHUB_ACCESS_TOKEN")
-    if not github_access_token:
-        raise ValueError("Error: GITHUB_ACCESS_TOKEN environment variable must be set.")
+    github_app_id = os.environ.get("GITHUB_APP_ID")
+    github_installation_id = os.environ.get("GITHUB_INSTALLATION_ID")
+    github_private_key_b64 = os.environ.get("GITHUB_PRIVATE_KEY_B64")
+
+    if not github_app_id or not github_installation_id or not github_private_key_b64:
+        raise ValueError("GitHub App ID, installation ID, and private key are required.")
 
     return GitHubIssueTool(
-        github_access_token=github_access_token
+        github_app_id=github_app_id,
+        github_installation_id=github_installation_id,
+        github_private_key_b64=github_private_key_b64,
     )
