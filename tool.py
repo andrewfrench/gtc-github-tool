@@ -85,6 +85,44 @@ class GitHubIssueTool(BaseTool):
             return TextArtifact(f"Issue #{values['issue_number']} updated successfully.")
         return TextArtifact(f"Error updating issue: {response.text}")
 
+    @activity(
+        config={
+            "description": "Searches issues in a GitHub repository with optional filters like state, creator, assignee, and labels.",
+            "schema": Schema({
+                Literal("owner", description="The owner of the repository."): str,
+                Literal("repo", description="The name of the repository."): str,
+                Optional("state", description="Filter by issue state: open or closed. Default is all."): str,
+                Optional("creator", description="Filter by issue creator."): str,
+                Optional("assignee", description="Filter by assignee. 'none' for unassigned."): str,
+                Optional("labels", description="Comma-separated labels (e.g., 'bug,urgent')."): str,
+                Optional("limit", description="Number of issues to retrieve (default: 20)."): int,
+            }),
+        }
+    )
+    def search_issues(self, values: dict) -> TextArtifact:
+        """ Searches issues in a GitHub repository with optional filters. """
+        url = f"{self.github_api_base_url}/repos/{values['owner']}/{values['repo']}/issues"
+
+        params = {
+            "state": values.get("state", "all"),
+            "creator": values.get("creator"),
+            "assignee": values.get("assignee"),
+            "labels": values.get("labels"),
+            "per_page": values.get("limit", 20),
+        }
+        params = {k: v for k, v in params.items() if v}  # Remove None values
+
+        response = requests.get(url, params=params, headers=self._get_headers())
+
+        if response.status_code == 200:
+            issues = response.json()
+            if not issues:
+                return TextArtifact("No matching issues found.")
+
+            result = "\n".join(f"#{issue['number']}: {issue['title']} - {issue['state']}" for issue in issues)
+            return TextArtifact(f"Found issues:\n{result}")
+        return TextArtifact(f"Error searching issues: {response.text}")
+
 
 def init_tool() -> GitHubIssueTool:
     github_access_token = os.environ.get("GITHUB_ACCESS_TOKEN")
