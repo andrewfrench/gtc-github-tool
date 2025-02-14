@@ -12,7 +12,7 @@ from griptape.utils.decorators import activity
 
 @define
 class GitHubIssueTool(BaseTool):
-    base_url: str = field(default="https://api.github.com", kw_only=True)
+    github_api_base_url: str = field(default="https://api.github.com", kw_only=True)
     github_access_token: str = field(default=None, kw_only=True)
 
     def _get_headers(self):
