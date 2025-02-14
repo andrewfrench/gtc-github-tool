@@ -192,7 +192,7 @@ class GitHubIssueTool(BaseTool):
     )
     def list_repositories(self, values: dict = None) -> TextArtifact:
         """ Lists repositories accessible by the GitHub App installation. """
-        url = f"{self.github_api_base_url}/installation/repositories"
+        url = f"{self.github_api_base_url}/repositories"
         headers = self._get_headers()
 
         repositories = []
