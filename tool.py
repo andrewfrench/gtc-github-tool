@@ -291,25 +291,44 @@ class GitHubIssueTool(BaseTool):
         }
     )
     def get_pull_request_details(self, values: dict) -> TextArtifact:
-        """ Retrieves details about a specific pull request. """
-        url = f"{self.github_api_base_url}/repos/{values['owner']}/{values['repo']}/pulls/{values['pr_number']}"
-        response = requests.get(url, headers=self._get_headers())
+        """ Retrieves details about a specific pull request, including assignees, labels, and comments. """
+        pr_url = f"{self.github_api_base_url}/repos/{values['owner']}/{values['repo']}/pulls/{values['pr_number']}"
+        comments_url = f"{self.github_api_base_url}/repos/{values['owner']}/{values['repo']}/issues/{values['pr_number']}/comments"
 
-        if response.status_code == 200:
-            pr = response.json()
-            details = (
-                f"Pull Request #{pr['number']} - {pr['title']}\n"
-                f"State: {pr['state']}\n"
-                f"Created by: {pr['user']['login']}\n"
-                f"Base Branch: {pr['base']['ref']}, Head Branch: {pr['head']['ref']}\n"
-                f"Created at: {pr['created_at']}\n"
-                f"Updated at: {pr['updated_at']}\n"
-                f"Merged: {'Yes' if pr['merged_at'] else 'No'}\n"
-                f"Body: {pr['body'] if pr['body'] else 'No description provided.'}\n"
-                f"URL: {pr['html_url']}"
-            )
-            return TextArtifact(details)
-        return TextArtifact(f"Error retrieving PR details: {response.text}")
+        # Fetch PR details
+        pr_response = requests.get(pr_url, headers=self._get_headers())
+        if pr_response.status_code != 200:
+            return TextArtifact(f"Error retrieving PR details: {pr_response.text}")
+
+        pr = pr_response.json()
+
+        # Fetch comments
+        comments_response = requests.get(comments_url, headers=self._get_headers())
+        comments = []
+        if comments_response.status_code == 200:
+            comments = [f"- {c['user']['login']}: {c['body']}" for c in comments_response.json()]
+
+        # Extract details
+        assignees = ", ".join(a['login'] for a in pr.get('assignees', [])) if pr.get('assignees') else "None"
+        labels = ", ".join(l['name'] for l in pr.get('labels', [])) if pr.get('labels') else "None"
+        comments_text = "\n".join(comments) if comments else "No comments."
+
+        details = (
+            f"Pull Request #{pr['number']} - {pr['title']}\n"
+            f"State: {pr['state']}\n"
+            f"Created by: {pr['user']['login']}\n"
+            f"Assignees: {assignees}\n"
+            f"Labels: {labels}\n"
+            f"Base Branch: {pr['base']['ref']}, Head Branch: {pr['head']['ref']}\n"
+            f"Created at: {pr['created_at']}\n"
+            f"Updated at: {pr['updated_at']}\n"
+            f"Merged: {'Yes' if pr['merged_at'] else 'No'}\n"
+            f"Body: {pr['body'] if pr['body'] else 'No description provided.'}\n"
+            f"URL: {pr['html_url']}\n"
+            f"Comments:\n{comments_text}"
+        )
+
+        return TextArtifact(details)
 
     @activity(
         config={
