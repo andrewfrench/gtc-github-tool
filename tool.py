@@ -53,26 +53,31 @@ class GitHubIssueTool(BaseTool):
 
     @activity(
         config={
-            "description": "Opens a new issue on a specified GitHub repository with optional labels.",
+            "description": "Opens a new issue on a specified GitHub repository with optional labels and assignees.",
             "schema": Schema({
                 Literal("owner", description="The owner of the repository."): str,
                 Literal("repo", description="The name of the repository."): str,
                 Literal("title", description="The title of the issue."): str,
                 Optional("body", description="The body content of the issue."): str,
                 Optional("labels", description="Comma-separated list of labels to add to the issue."): str,
+                Optional("assignees",
+                         description="Comma-separated list of GitHub usernames to assign to the issue."): str,
             }),
         }
     )
     def open_issue(self, values: dict) -> TextArtifact:
-        """ Opens a new issue in the specified GitHub repository with optional labels. """
+        """ Opens a new issue in the specified GitHub repository with optional labels and assignees. """
         url = f"{self.github_api_base_url}/repos/{values['owner']}/{values['repo']}/issues"
 
         labels = [label.strip() for label in values.get("labels", "").split(",")] if values.get("labels") else []
+        assignees = [assignee.strip() for assignee in values.get("assignees", "").split(",")] if values.get(
+            "assignees") else []
 
         payload = {
             "title": values["title"],
             "body": values.get("body", ""),
-            "labels": labels if labels else None  # Only include labels if provided
+            "labels": labels if labels else None,  # Only include labels if provided
+            "assignees": assignees if assignees else None,  # Only include assignees if provided
         }
 
         response = requests.post(url, json=payload, headers=self._get_headers())
@@ -103,7 +108,7 @@ class GitHubIssueTool(BaseTool):
 
     @activity(
         config={
-            "description": "Edits an issue in a GitHub repository (e.g., change title, body, state, or labels).",
+            "description": "Edits an issue in a GitHub repository (e.g., change title, body, state, labels, or assignees).",
             "schema": Schema({
                 Literal("owner", description="The owner of the repository."): str,
                 Literal("repo", description="The name of the repository."): str,
@@ -113,20 +118,26 @@ class GitHubIssueTool(BaseTool):
                 Optional("state", description="New state of the issue (open or closed)."): str,
                 Optional("labels",
                          description="Comma-separated list of labels to apply to the issue. Existing labels will be replaced."): str,
+                Optional("assignees",
+                         description="Comma-separated list of GitHub usernames to assign to the issue. Existing assignees will be replaced."): str,
             }),
         }
     )
     def edit_issue(self, values: dict) -> TextArtifact:
-        """ Edits an existing issue (title, body, state, or labels) in a GitHub repository. """
+        """ Edits an existing issue (title, body, state, labels, or assignees) in a GitHub repository. """
         url = f"{self.github_api_base_url}/repos/{values['owner']}/{values['repo']}/issues/{values['issue_number']}"
 
         # Extract relevant values
         labels = [label.strip() for label in values.get("labels", "").split(",")] if values.get("labels") else None
+        assignees = [assignee.strip() for assignee in values.get("assignees", "").split(",")] if values.get(
+            "assignees") else None
 
         # Construct the payload dynamically
         payload = {key: value for key, value in values.items() if key in ["title", "body", "state"]}
         if labels is not None:
             payload["labels"] = labels  # Replace existing labels
+        if assignees is not None:
+            payload["assignees"] = assignees  # Replace existing assignees
 
         response = requests.patch(url, json=payload, headers=self._get_headers())
 
@@ -136,7 +147,7 @@ class GitHubIssueTool(BaseTool):
 
     @activity(
         config={
-            "description": "Lists issues in a GitHub repository with optional filters, including their labels, excluding pull requests.",
+            "description": "Lists issues in a GitHub repository with optional filters, including their labels and assignees, excluding pull requests.",
             "schema": Schema({
                 Literal("owner", description="The owner of the repository."): str,
                 Literal("repo", description="The name of the repository."): str,
@@ -149,7 +160,7 @@ class GitHubIssueTool(BaseTool):
         }
     )
     def list_issues(self, values: dict) -> TextArtifact:
-        """ Searches issues in a GitHub repository with optional filters, including their labels, while filtering out pull requests. """
+        """ Searches issues in a GitHub repository with optional filters, including labels and assignees, while filtering out pull requests. """
         url = f"{self.github_api_base_url}/repos/{values['owner']}/{values['repo']}/issues"
 
         params = {
@@ -171,7 +182,9 @@ class GitHubIssueTool(BaseTool):
                 return TextArtifact("No matching issues found.")
 
             result = "\n".join(
-                f"#{issue['number']}: {issue['title']} - {issue['state']} - Labels: {', '.join(label['name'] for label in issue.get('labels', [])) or 'None'}"
+                f"#{issue['number']}: {issue['title']} - {issue['state']} - "
+                f"Labels: {', '.join(label['name'] for label in issue.get('labels', [])) or 'None'} - "
+                f"Assignee(s): {', '.join(a['login'] for a in issue.get('assignees', [])) or 'None'}"
                 for issue in filtered_issues
             )
             return TextArtifact(f"Found issues:\n{result}")
