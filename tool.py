@@ -333,6 +333,25 @@ class GitHubIssueTool(BaseTool):
             return TextArtifact(f"Comment added successfully: {response.json().get('html_url')}")
         return TextArtifact(f"Error adding comment: {response.text}")
 
+    @activity(
+        config={
+            "description": "Lists available labels in a repository.",
+            "schema": Schema({
+                Literal("owner", description="The owner of the repository."): str,
+                Literal("repo", description="The name of the repository."): str,
+            }),
+        }
+    )
+    def list_available_labels_for_repo(self, values: dict) -> TextArtifact:
+        """ Lists available labels in a repository. """
+        url = f"{self.github_api_base_url}/repos/{values['owner']}/{values['repo']}/labels"
+        response = requests.get(url, headers=self._get_headers())
+
+        if response.status_code == 200:
+            labels = [label['name'] for label in response.json()]
+            return TextArtifact(f"Available labels: {', '.join(labels)}")
+        return TextArtifact(f"Error listing labels: {response.text}")
+
 
 def init_tool() -> GitHubIssueTool:
     github_app_id = os.environ.get("GITHUB_APP_ID")
