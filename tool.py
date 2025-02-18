@@ -53,35 +53,112 @@ class GitHubIssueTool(BaseTool):
 
     @activity(
         config={
-            "description": "Opens a new issue on a specified GitHub repository with optional labels and assignees.",
+            "description": "Opens a new issue on a specified GitHub repository using an optional issue template.",
             "schema": Schema({
                 Literal("owner", description="The owner of the repository."): str,
                 Literal("repo", description="The name of the repository."): str,
                 Literal("title", description="The title of the issue."): str,
-                Optional("body", description="The body content of the issue."): str,
+                Optional("template", description="The name of the issue template to use."): str,
+                Optional("body", description="The body content of the issue (used if no template is specified)."): str,
                 Optional("labels", description="Comma-separated list of labels to add to the issue."): str,
-                Optional("assignees",
-                         description="Comma-separated list of GitHub usernames to assign to the issue."): str,
+                Optional("assignees", description="Comma-separated list of GitHub usernames to assign to the issue."): str,
+                Optional("fields", description="Dictionary of field IDs and their values for template fields."): dict,
             }),
         }
     )
     def open_issue(self, values: dict) -> TextArtifact:
-        """ Opens a new issue in the specified GitHub repository with optional labels and assignees. """
+        """ Opens a new issue in the specified GitHub repository with optional template and fields. """
         url = f"{self.github_api_base_url}/repos/{values['owner']}/{values['repo']}/issues"
-
+        
+        # Process basic parameters
         labels = [label.strip() for label in values.get("labels", "").split(",")] if values.get("labels") else []
-        assignees = [assignee.strip() for assignee in values.get("assignees", "").split(",")] if values.get(
-            "assignees") else []
-
-        payload = {
-            "title": values["title"],
-            "body": values.get("body", ""),
-            "labels": labels if labels else None,  # Only include labels if provided
-            "assignees": assignees if assignees else None,  # Only include assignees if provided
-        }
-
+        assignees = [assignee.strip() for assignee in values.get("assignees", "").split(",")] if values.get("assignees") else []
+        
+        # If no template specified, create issue with basic body
+        if not values.get("template"):
+            payload = {
+                "title": values["title"],
+                "body": values.get("body", ""),
+                "labels": labels if labels else None,
+                "assignees": assignees if assignees else None,
+            }
+        else:
+            # Fetch template information
+            forms_url = f"{self.github_api_base_url}/repos/{values['owner']}/{values['repo']}/issues/forms"
+            forms_response = requests.get(forms_url, headers=self._get_headers())
+            
+            if forms_response.status_code == 200:
+                templates = forms_response.json()
+                template = next((t for t in templates if t.get('name') == values['template']), None)
+                
+                if not template:
+                    return TextArtifact(f"Template '{values['template']}' not found. Available templates: {', '.join(t.get('name', '') for t in templates)}")
+                
+                # Build the body using template fields
+                body_parts = []
+                fields_dict = values.get("fields", {})
+                
+                for field in template.get('body', []):
+                    if field.get('type') == 'markdown':
+                        # Add markdown sections as is
+                        body_parts.append(field.get('attributes', {}).get('value', ''))
+                    else:
+                        field_id = field.get('id')
+                        field_label = field.get('attributes', {}).get('label', field_id)
+                        
+                        # Check if field is required but missing
+                        if field.get('validations', {}).get('required', False) and field_id not in fields_dict:
+                            return TextArtifact(
+                                f"Required field '{field_label}' missing. Please provide value using fields dict with key '{field_id}'"
+                            )
+                        
+                        # Add field value if provided
+                        if field_id in fields_dict:
+                            body_parts.append(f"### {field_label}\n\n{fields_dict[field_id]}\n")
+                
+                payload = {
+                    "title": values["title"],
+                    "body": "\n".join(body_parts),
+                    "labels": labels if labels else None,
+                    "assignees": assignees if assignees else None,
+                }
+            else:
+                # Try legacy templates
+                template_path = f".github/ISSUE_TEMPLATE/{values['template']}"
+                if not template_path.endswith(('.md', '.yml', '.yaml')):
+                    template_path += '.md'
+                
+                content_url = f"{self.github_api_base_url}/repos/{values['owner']}/{values['repo']}/contents/{template_path}"
+                content_response = requests.get(content_url, headers=self._get_headers())
+                
+                if content_response.status_code != 200:
+                    return TextArtifact(f"Template '{values['template']}' not found and issue forms API not available.")
+                
+                import base64
+                template_content = base64.b64decode(content_response.json()['content']).decode('utf-8')
+                
+                # Remove YAML frontmatter if present
+                if template_content.startswith('---'):
+                    frontmatter_end = template_content.find('---', 3)
+                    if frontmatter_end != -1:
+                        template_content = template_content[frontmatter_end + 3:].strip()
+                
+                # Replace any placeholders in the template with provided field values
+                body = template_content
+                if values.get("fields"):
+                    for field_id, field_value in values["fields"].items():
+                        body = body.replace(f"<!-- {field_id} -->", str(field_value))
+                        body = body.replace(f"{field_id}: ", f"{field_id}: {field_value}")
+                
+                payload = {
+                    "title": values["title"],
+                    "body": body,
+                    "labels": labels if labels else None,
+                    "assignees": assignees if assignees else None,
+                }
+        
         response = requests.post(url, json=payload, headers=self._get_headers())
-
+        
         if response.status_code == 201:
             return TextArtifact(f"Issue created successfully: {response.json().get('html_url')}")
         return TextArtifact(f"Error creating issue: {response.text}")
@@ -315,7 +392,6 @@ class GitHubIssueTool(BaseTool):
 
             result = []
             for pr in prs:
-                # Get reviewers for each PR
                 reviewers = [r['login'] for r in pr.get('requested_reviewers', [])]
                 reviewer_text = f" - Reviewers: {', '.join(reviewers) if reviewers else 'None'}"
                 result.append(f"#{pr['number']}: {pr['title']} - {pr['state']} (By {pr['user']['login']}){reviewer_text}")
@@ -424,6 +500,91 @@ class GitHubIssueTool(BaseTool):
             labels = [label['name'] for label in response.json()]
             return TextArtifact(f"Available labels: {', '.join(labels)}")
         return TextArtifact(f"Error listing labels: {response.text}")
+
+    @activity(
+        config={
+            "description": "Lists available issue templates and their required fields in a repository.",
+            "schema": Schema({
+                Literal("owner", description="The owner of the repository."): str,
+                Literal("repo", description="The name of the repository."): str,
+            }),
+        }
+    )
+    def list_issue_templates(self, values: dict) -> TextArtifact:
+        """ Lists available issue templates and their required fields in a repository. """
+        # First try the new issue forms API endpoint
+        forms_url = f"{self.github_api_base_url}/repos/{values['owner']}/{values['repo']}/issues/forms"
+        forms_response = requests.get(forms_url, headers=self._get_headers())
+        
+        if forms_response.status_code == 200:
+            templates = forms_response.json()
+            if not templates:
+                return TextArtifact("No issue templates found in the repository.")
+            
+            result = []
+            for template in templates:
+                fields = []
+                for field in template.get('body', []):
+                    if field.get('type') != 'markdown':  # Skip markdown sections as they're not input fields
+                        field_type = field.get('type', 'unknown')
+                        field_id = field.get('id', 'unnamed')
+                        field_label = field.get('attributes', {}).get('label', field_id)
+                        required = "required" if field.get('validations', {}).get('required', False) else "optional"
+                        fields.append(f"  - {field_label} ({field_type}, {required})")
+                
+                result.append(
+                    f"Template: {template.get('name')}\n"
+                    f"Description: {template.get('description', 'No description')}\n"
+                    f"Fields:\n" + "\n".join(fields) + "\n"
+                )
+            
+            return TextArtifact("Issue Templates:\n\n" + "\n".join(result))
+        
+        # If issue forms not found, try the legacy issue templates
+        templates_url = f"{self.github_api_base_url}/repos/{values['owner']}/{values['repo']}/contents/.github/ISSUE_TEMPLATE"
+        templates_response = requests.get(templates_url, headers=self._get_headers())
+        
+        if templates_response.status_code == 200:
+            templates = templates_response.json()
+            result = ["Legacy Issue Templates:"]
+            
+            for template in templates:
+                if template['type'] == 'file':
+                    name = template['name']
+                    content_response = requests.get(template['download_url'], headers=self._get_headers())
+                    if content_response.status_code == 200:
+                        content = content_response.text
+                        result.append(f"\nTemplate: {name}")
+                        
+                        # Try to parse YAML frontmatter if present
+                        if content.startswith('---'):
+                            try:
+                                frontmatter_end = content.find('---', 3)
+                                if frontmatter_end != -1:
+                                    import yaml
+                                    metadata = yaml.safe_load(content[3:frontmatter_end])
+                                    if metadata:
+                                        if 'name' in metadata:
+                                            result.append(f"Name: {metadata['name']}")
+                                        if 'about' in metadata:
+                                            result.append(f"About: {metadata['about']}")
+                                        if 'labels' in metadata:
+                                            result.append(f"Labels: {', '.join(metadata['labels'])}")
+                            except yaml.YAMLError:
+                                pass
+            
+            return TextArtifact("\n".join(result))
+        
+        if forms_response.status_code == 404 and templates_response.status_code == 404:
+            return TextArtifact("No issue templates found in the repository.")
+        
+        error_messages = []
+        if forms_response.status_code != 200:
+            error_messages.append(f"Error accessing issue forms: {forms_response.text}")
+        if templates_response.status_code != 200:
+            error_messages.append(f"Error accessing legacy templates: {templates_response.text}")
+        
+        return TextArtifact("\n".join(error_messages))
 
 
 def init_tool() -> GitHubIssueTool:
