@@ -136,7 +136,7 @@ class GitHubIssueTool(BaseTool):
 
     @activity(
         config={
-            "description": "Lists issues in a GitHub repository with optional filters, including their labels.",
+            "description": "Lists issues in a GitHub repository with optional filters, including their labels, excluding pull requests.",
             "schema": Schema({
                 Literal("owner", description="The owner of the repository."): str,
                 Literal("repo", description="The name of the repository."): str,
@@ -144,12 +144,12 @@ class GitHubIssueTool(BaseTool):
                 Optional("creator", description="Filter by issue creator."): str,
                 Optional("assignee", description="Filter by assignee. 'none' for unassigned."): str,
                 Optional("labels", description="Comma-separated labels (e.g., 'bug,urgent')."): str,
-                Optional("limit", description="Number of issues to retrieve (default: 20)."): int,
+                Optional("limit", description="Number of issues to retrieve (default: 50)."): int,
             }),
         }
     )
     def list_issues(self, values: dict) -> TextArtifact:
-        """ Searches issues in a GitHub repository with optional filters, including their labels. """
+        """ Searches issues in a GitHub repository with optional filters, including their labels, while filtering out pull requests. """
         url = f"{self.github_api_base_url}/repos/{values['owner']}/{values['repo']}/issues"
 
         params = {
@@ -157,7 +157,7 @@ class GitHubIssueTool(BaseTool):
             "creator": values.get("creator"),
             "assignee": values.get("assignee"),
             "labels": values.get("labels"),
-            "per_page": values.get("limit", 20),
+            "per_page": values.get("limit", 50),
         }
         params = {k: v for k, v in params.items() if v}  # Remove None values
 
@@ -165,12 +165,14 @@ class GitHubIssueTool(BaseTool):
 
         if response.status_code == 200:
             issues = response.json()
-            if not issues:
+            filtered_issues = [issue for issue in issues if "pull_request" not in issue]  # Exclude pull requests
+
+            if not filtered_issues:
                 return TextArtifact("No matching issues found.")
 
             result = "\n".join(
                 f"#{issue['number']}: {issue['title']} - {issue['state']} - Labels: {', '.join(label['name'] for label in issue.get('labels', [])) or 'None'}"
-                for issue in issues
+                for issue in filtered_issues
             )
             return TextArtifact(f"Found issues:\n{result}")
         return TextArtifact(f"Error searching issues: {response.text}")
