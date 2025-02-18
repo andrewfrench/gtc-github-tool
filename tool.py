@@ -53,19 +53,28 @@ class GitHubIssueTool(BaseTool):
 
     @activity(
         config={
-            "description": "Opens a new issue on a specified GitHub repository.",
+            "description": "Opens a new issue on a specified GitHub repository with optional labels.",
             "schema": Schema({
                 Literal("owner", description="The owner of the repository."): str,
                 Literal("repo", description="The name of the repository."): str,
                 Literal("title", description="The title of the issue."): str,
                 Optional("body", description="The body content of the issue."): str,
+                Optional("labels", description="Comma-separated list of labels to add to the issue."): str,
             }),
         }
     )
     def open_issue(self, values: dict) -> TextArtifact:
-        """ Opens a new issue in the specified GitHub repository. """
+        """ Opens a new issue in the specified GitHub repository with optional labels. """
         url = f"{self.github_api_base_url}/repos/{values['owner']}/{values['repo']}/issues"
-        payload = {"title": values["title"], "body": values.get("body", "")}
+
+        labels = [label.strip() for label in values.get("labels", "").split(",")] if values.get("labels") else []
+
+        payload = {
+            "title": values["title"],
+            "body": values.get("body", ""),
+            "labels": labels if labels else None  # Only include labels if provided
+        }
+
         response = requests.post(url, json=payload, headers=self._get_headers())
 
         if response.status_code == 201:
