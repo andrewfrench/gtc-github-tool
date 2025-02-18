@@ -313,8 +313,14 @@ class GitHubIssueTool(BaseTool):
             if not prs:
                 return TextArtifact("No matching pull requests found.")
 
-            result = "\n".join(f"#{pr['number']}: {pr['title']} - {pr['state']} (By {pr['user']['login']})" for pr in prs)
-            return TextArtifact(f"Pull Requests:\n{result}")
+            result = []
+            for pr in prs:
+                # Get reviewers for each PR
+                reviewers = [r['login'] for r in pr.get('requested_reviewers', [])]
+                reviewer_text = f" - Reviewers: {', '.join(reviewers) if reviewers else 'None'}"
+                result.append(f"#{pr['number']}: {pr['title']} - {pr['state']} (By {pr['user']['login']}){reviewer_text}")
+
+            return TextArtifact(f"Pull Requests:\n" + "\n".join(result))
         return TextArtifact(f"Error retrieving pull requests: {response.text}")
 
     @activity(
@@ -328,7 +334,7 @@ class GitHubIssueTool(BaseTool):
         }
     )
     def get_pull_request_details(self, values: dict) -> TextArtifact:
-        """ Retrieves details about a specific pull request, including assignees, labels, and comments. """
+        """ Retrieves details about a specific pull request, including assignees, labels, comments, and reviewers. """
         pr_url = f"{self.github_api_base_url}/repos/{values['owner']}/{values['repo']}/pulls/{values['pr_number']}"
         comments_url = f"{self.github_api_base_url}/repos/{values['owner']}/{values['repo']}/issues/{values['pr_number']}/comments"
 
@@ -349,6 +355,15 @@ class GitHubIssueTool(BaseTool):
         assignees = ", ".join(a['login'] for a in pr.get('assignees', [])) if pr.get('assignees') else "None"
         labels = ", ".join(l['name'] for l in pr.get('labels', [])) if pr.get('labels') else "None"
         comments_text = "\n".join(comments) if comments else "No comments."
+        
+        requested_reviewers = ", ".join(r['login'] for r in pr.get('requested_reviewers', [])) if pr.get('requested_reviewers') else "None"
+        reviews_url = f"{self.github_api_base_url}/repos/{values['owner']}/{values['repo']}/pulls/{values['pr_number']}/reviews"
+        reviews_response = requests.get(reviews_url, headers=self._get_headers())
+        reviews = []
+        if reviews_response.status_code == 200:
+            for review in reviews_response.json():
+                reviews.append(f"- {review['user']['login']}: {review['state']}")
+        reviews_text = "\n".join(reviews) if reviews else "No reviews submitted."
 
         details = (
             f"Pull Request #{pr['number']} - {pr['title']}\n"
@@ -356,6 +371,8 @@ class GitHubIssueTool(BaseTool):
             f"Created by: {pr['user']['login']}\n"
             f"Assignees: {assignees}\n"
             f"Labels: {labels}\n"
+            f"Requested Reviewers: {requested_reviewers}\n"
+            f"Reviews:\n{reviews_text}\n"
             f"Base Branch: {pr['base']['ref']}, Head Branch: {pr['head']['ref']}\n"
             f"Created at: {pr['created_at']}\n"
             f"Updated at: {pr['updated_at']}\n"
