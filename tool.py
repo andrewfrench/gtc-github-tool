@@ -103,7 +103,7 @@ class GitHubIssueTool(BaseTool):
 
     @activity(
         config={
-            "description": "Edits an issue in a GitHub repository (e.g., change title, body, or state).",
+            "description": "Edits an issue in a GitHub repository (e.g., change title, body, state, or labels).",
             "schema": Schema({
                 Literal("owner", description="The owner of the repository."): str,
                 Literal("repo", description="The name of the repository."): str,
@@ -111,13 +111,23 @@ class GitHubIssueTool(BaseTool):
                 Optional("title", description="New title for the issue."): str,
                 Optional("body", description="New body content for the issue."): str,
                 Optional("state", description="New state of the issue (open or closed)."): str,
+                Optional("labels",
+                         description="Comma-separated list of labels to apply to the issue. Existing labels will be replaced."): str,
             }),
         }
     )
     def edit_issue(self, values: dict) -> TextArtifact:
-        """ Edits an existing issue (title, body, or state) in a GitHub repository. """
+        """ Edits an existing issue (title, body, state, or labels) in a GitHub repository. """
         url = f"{self.github_api_base_url}/repos/{values['owner']}/{values['repo']}/issues/{values['issue_number']}"
+
+        # Extract relevant values
+        labels = [label.strip() for label in values.get("labels", "").split(",")] if values.get("labels") else None
+
+        # Construct the payload dynamically
         payload = {key: value for key, value in values.items() if key in ["title", "body", "state"]}
+        if labels is not None:
+            payload["labels"] = labels  # Replace existing labels
+
         response = requests.patch(url, json=payload, headers=self._get_headers())
 
         if response.status_code == 200:
