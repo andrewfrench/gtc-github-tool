@@ -136,7 +136,7 @@ class GitHubIssueTool(BaseTool):
 
     @activity(
         config={
-            "description": "Lists issues in a GitHub repository with optional filters.",
+            "description": "Lists issues in a GitHub repository with optional filters, including their labels.",
             "schema": Schema({
                 Literal("owner", description="The owner of the repository."): str,
                 Literal("repo", description="The name of the repository."): str,
@@ -149,7 +149,7 @@ class GitHubIssueTool(BaseTool):
         }
     )
     def list_issues(self, values: dict) -> TextArtifact:
-        """ Searches issues in a GitHub repository with optional filters. """
+        """ Searches issues in a GitHub repository with optional filters, including their labels. """
         url = f"{self.github_api_base_url}/repos/{values['owner']}/{values['repo']}/issues"
 
         params = {
@@ -168,7 +168,10 @@ class GitHubIssueTool(BaseTool):
             if not issues:
                 return TextArtifact("No matching issues found.")
 
-            result = "\n".join(f"#{issue['number']}: {issue['title']} - {issue['state']}" for issue in issues)
+            result = "\n".join(
+                f"#{issue['number']}: {issue['title']} - {issue['state']} - Labels: {', '.join(label['name'] for label in issue.get('labels', [])) or 'None'}"
+                for issue in issues
+            )
             return TextArtifact(f"Found issues:\n{result}")
         return TextArtifact(f"Error searching issues: {response.text}")
 
