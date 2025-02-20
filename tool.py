@@ -71,17 +71,19 @@ class GitHubIssueTool(BaseTool):
         url = f"{self.github_api_base_url}/repos/{values['owner']}/{values['repo']}/issues"
         
         # Process basic parameters
-        labels = [label.strip() for label in values.get("labels", "").split(",")] if values.get("labels") else []
-        assignees = [assignee.strip() for assignee in values.get("assignees", "").split(",")] if values.get("assignees") else []
+        labels = [label.strip() for label in values.get("labels", "").split(",")] if values.get("labels") else None
+        assignees = [assignee.strip() for assignee in values.get("assignees", "").split(",")] if values.get("assignees") else None
         
         # If no template specified, create issue with basic body
         if not values.get("template"):
             payload = {
                 "title": values["title"],
                 "body": values.get("body", ""),
-                "labels": labels if labels else None,
-                "assignees": assignees if assignees else None,
             }
+            if labels:
+                payload["labels"] = labels
+            if assignees:
+                payload["assignees"] = assignees
         else:
             # Fetch template information
             forms_url = f"{self.github_api_base_url}/repos/{values['owner']}/{values['repo']}/issues/forms"
@@ -119,9 +121,11 @@ class GitHubIssueTool(BaseTool):
                 payload = {
                     "title": values["title"],
                     "body": "\n".join(body_parts),
-                    "labels": labels if labels else None,
-                    "assignees": assignees if assignees else None,
                 }
+                if labels:
+                    payload["labels"] = labels
+                if assignees:
+                    payload["assignees"] = assignees
             else:
                 # Try legacy templates
                 template_path = f".github/ISSUE_TEMPLATE/{values['template']}"
@@ -153,9 +157,11 @@ class GitHubIssueTool(BaseTool):
                 payload = {
                     "title": values["title"],
                     "body": body,
-                    "labels": labels if labels else None,
-                    "assignees": assignees if assignees else None,
                 }
+                if labels:
+                    payload["labels"] = labels
+                if assignees:
+                    payload["assignees"] = assignees
         
         response = requests.post(url, json=payload, headers=self._get_headers())
         
@@ -276,10 +282,10 @@ class GitHubIssueTool(BaseTool):
 
         # Construct the payload dynamically
         payload = {key: value for key, value in values.items() if key in ["title", "body", "state"]}
-        if labels is not None:
-            payload["labels"] = labels  # Replace existing labels
-        if assignees is not None:
-            payload["assignees"] = assignees  # Replace existing assignees
+        if labels is not None:  # Only include labels if explicitly provided
+            payload["labels"] = labels
+        if assignees is not None:  # Only include assignees if explicitly provided
+            payload["assignees"] = assignees
 
         response = requests.patch(url, json=payload, headers=self._get_headers())
 
